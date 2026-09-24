@@ -12,9 +12,9 @@ class ExampleUnitTest {
 
   @Test
   fun `dance modes have correct display names`() {
-    assertEquals("Beat Bounce", DanceMode.BEAT_BOUNCE.displayName)
-    assertEquals("Gear 5 Hype", DanceMode.GEAR_5_HYPE.displayName)
-    assertEquals("Straw Hat Chill", DanceMode.STRAW_HAT_CHILL.displayName)
+    assertEquals("Beat Bounce", DanceMode.BEAT_BOUNCE.label)
+    assertEquals("Gear 5 Hype", DanceMode.GEAR_5.label)
+    assertEquals("Straw Hat Chill", DanceMode.STRAW_HAT_CHILL.label)
   }
 
   @Test

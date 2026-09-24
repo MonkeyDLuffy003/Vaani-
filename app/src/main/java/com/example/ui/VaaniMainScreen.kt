@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -361,6 +362,24 @@ fun VaaniMainScreen(
                         Text(
                             text = if (isLuffyDancingEnabled) "👒" else "🏴‍☠️",
                             fontSize = 17.sp
+                        )
+                    }
+
+                    // Direct AI Bot Assistant Interface Button
+                    IconButton(
+                        onClick = { viewModel.showVoiceDialog.value = true },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(PrimaryNeon.copy(alpha = 0.2f))
+                            .border(1.dp, PrimaryNeon.copy(alpha = 0.5f), CircleShape)
+                            .testTag("open_ai_bot_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SmartToy,
+                            contentDescription = "Open AI Bot Interface",
+                            tint = PrimaryNeon,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
