@@ -1,0 +1,6 @@
+{
+  "name": "Vaani",
+  "description": "AI voice agent music player with vocal mood analysis, offline storage playback, sleep timer, and smart channels.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

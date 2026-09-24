@@ -1,0 +1,59 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Sound wave bars centered around V shape -->
+    <!-- Left wing soundbars -->
+    <path
+        android:pathData="M34,44 L34,60"
+        android:strokeWidth="4"
+        android:strokeColor="#818CF8"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M41,38 L41,66"
+        android:strokeWidth="4.5"
+        android:strokeColor="#6366F1"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M48,32 L48,72"
+        android:strokeWidth="5"
+        android:strokeColor="#38BDF8"
+        android:strokeLineCap="round" />
+    
+    <!-- Central AI Orb / Voice Core -->
+    <path
+        android:pathData="M54,42 A6,6 0 1 0 54,54 A6,6 0 1 0 54,42 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M54,26 L54,78"
+        android:strokeWidth="5.5"
+        android:strokeColor="#06B6D4"
+        android:strokeLineCap="round" />
+
+    <!-- Right wing soundbars -->
+    <path
+        android:pathData="M60,32 L60,72"
+        android:strokeWidth="5"
+        android:strokeColor="#38BDF8"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M67,38 L67,66"
+        android:strokeWidth="4.5"
+        android:strokeColor="#A855F7"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M74,44 L74,60"
+        android:strokeWidth="4"
+        android:strokeColor="#EC4899"
+        android:strokeLineCap="round" />
+
+    <!-- Sleek Vaani V chevron overlay -->
+    <path
+        android:pathData="M36,40 L54,74 L72,40"
+        android:strokeWidth="4"
+        android:strokeColor="#F8FAFC"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
