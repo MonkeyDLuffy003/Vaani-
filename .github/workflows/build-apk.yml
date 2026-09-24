@@ -26,11 +26,32 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Prepare Debug Keystore
+      - name: Prepare Debug Keystore and Environment
         run: |
+          # Create .env from .env.example if missing
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+          fi
+
+          # Decode base64 keystore if present
           if [ -f debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore
           fi
+
+          # If debug.keystore is still missing, generate one with keytool matching debugConfig
+          if [ ! -f debug.keystore ]; then
+            echo "Generating debug.keystore using keytool..."
+            keytool -genkey -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          ls -l debug.keystore
 
       - name: Build Debug APK
         run: gradle :app:assembleDebug --no-daemon
