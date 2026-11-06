@@ -12,8 +12,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 
+import android.os.Handler
+import android.os.Looper
+
 class VoiceRecognitionManager(private val context: Context) {
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var speechRecognizer: SpeechRecognizer? = null
 
     private val _isListening = MutableStateFlow(false)
@@ -29,15 +33,16 @@ class VoiceRecognitionManager(private val context: Context) {
     var onError: ((String) -> Unit)? = null
 
     fun startListening() {
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            onError?.invoke("Speech recognition not available on device")
-            return
-        }
+        mainHandler.post {
+            if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+                onError?.invoke("Speech recognition service not ready. Type below or enable Google Speech.")
+                return@post
+            }
 
-        stopListening()
+            stopListeningInternal()
 
-        try {
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+            try {
+                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
                 setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {
                         _isListening.value = true
@@ -105,9 +110,16 @@ class VoiceRecognitionManager(private val context: Context) {
             Log.e("VoiceManager", "Error starting speech: ${e.message}")
             onError?.invoke("Microphone error: ${e.message}")
         }
+        }
     }
 
     fun stopListening() {
+        mainHandler.post {
+            stopListeningInternal()
+        }
+    }
+
+    private fun stopListeningInternal() {
         _isListening.value = false
         _rmsAudioLevel.value = 0f
         try {

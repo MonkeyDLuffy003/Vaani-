@@ -1,6 +1,5 @@
 package com.example
 
-import com.example.ui.DanceMode
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -11,14 +10,10 @@ class ExampleUnitTest {
   }
 
   @Test
-  fun `dance modes have correct display names`() {
-    assertEquals("Beat Bounce", DanceMode.BEAT_BOUNCE.label)
-    assertEquals("Gear 5 Hype", DanceMode.GEAR_5.label)
-    assertEquals("Straw Hat Chill", DanceMode.STRAW_HAT_CHILL.label)
-  }
-
-  @Test
-  fun `dance modes count is three`() {
-    assertEquals(3, DanceMode.values().size)
+  fun `music channels are well formed`() {
+    val channels = listOf("All", "Cooking", "Gym", "Home", "Relax", "Motivation", "Storage")
+    assertEquals(7, channels.size)
+    assertTrue(channels.contains("Relax"))
+    assertTrue(channels.contains("Gym"))
   }
 }

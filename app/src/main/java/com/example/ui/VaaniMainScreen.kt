@@ -64,13 +64,14 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.ChannelSelectorRow
 import com.example.ui.components.FullPlayerSheet
-import com.example.ui.components.LuffyDancingStageCard
+import com.example.ui.components.VyshuStageCard
 import com.example.ui.components.SleepTimerSheet
 import com.example.ui.components.SongListItem
 import com.example.ui.components.VaaniDockPlayer
 import com.example.ui.components.VocalMoodCard
 import com.example.ui.components.VoiceAssistantSheet
 import com.example.ui.components.VoiceHistorySheet
+import com.example.ui.components.VyshuAiSheet
 import com.example.ui.theme.AccentEmerald
 import com.example.ui.theme.BackgroundDark
 import com.example.ui.theme.PrimaryNeon
@@ -115,12 +116,13 @@ fun VaaniMainScreen(
     val showSleepTimerSheet by viewModel.showSleepTimerSheet.collectAsStateWithLifecycle()
     val showVoiceDialog by viewModel.showVoiceDialog.collectAsStateWithLifecycle()
     val showFullPlayerSheet by viewModel.showFullPlayerSheet.collectAsStateWithLifecycle()
+    val showVyshuSheet by viewModel.showVyshuSheet.collectAsStateWithLifecycle()
+    val vyshuMessages by viewModel.vyshuBridge.conversationHistory.collectAsStateWithLifecycle()
+    val vyshuMood by viewModel.vyshuBridge.vyshuMood.collectAsStateWithLifecycle()
     val storageScanNotification by viewModel.storageScanNotification.collectAsStateWithLifecycle()
 
-    val isLuffyDancingEnabled by viewModel.isLuffyDancingEnabled.collectAsStateWithLifecycle()
-    val luffyDanceMode by viewModel.luffyDanceMode.collectAsStateWithLifecycle()
-    val luffyTapMessage by viewModel.luffyTapMessage.collectAsStateWithLifecycle()
-    var isLuffyStageMinimized by remember { mutableStateOf(false) }
+    val isVyshuStageEnabled by viewModel.isVyshuStageEnabled.collectAsStateWithLifecycle()
+    val vyshuTapMessage by viewModel.vyshuTapMessage.collectAsStateWithLifecycle()
 
     var showHistorySheet by remember { mutableStateOf(false) }
 
@@ -203,9 +205,7 @@ fun VaaniMainScreen(
                 onMicClick = { checkAndRequestMicPermission() },
                 onSleepTimerClick = { viewModel.showSleepTimerSheet.value = true },
                 onCardClick = { viewModel.showFullPlayerSheet.value = true },
-                modifier = Modifier.navigationBarsPadding(),
-                isLuffyDancingEnabled = isLuffyDancingEnabled,
-                danceMode = luffyDanceMode
+                modifier = Modifier.navigationBarsPadding()
             )
         }
     ) { innerPadding ->
@@ -352,17 +352,19 @@ fun VaaniMainScreen(
                         )
                     }
 
-                    // Luffy Dancing Mode Quick Toggle
+
+
+                    // Vyshu AI Companion Synergy Button
                     IconButton(
-                        onClick = { viewModel.toggleLuffyDancing() },
+                        onClick = { viewModel.showVyshuSheet.value = true },
                         modifier = Modifier
                             .size(36.dp)
-                            .testTag("toggle_luffy_btn")
+                            .clip(CircleShape)
+                            .background(Color(0xFF8B5CF6).copy(alpha = 0.2f))
+                            .border(1.dp, Color(0xFFA78BFA).copy(alpha = 0.5f), CircleShape)
+                            .testTag("open_vyshu_btn")
                     ) {
-                        Text(
-                            text = if (isLuffyDancingEnabled) "👒" else "🏴‍☠️",
-                            fontSize = 17.sp
-                        )
+                        Text("💜", fontSize = 16.sp)
                     }
 
                     // Direct AI Bot Assistant Interface Button
@@ -394,18 +396,15 @@ fun VaaniMainScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Interactive Monkey D. Luffy Dancing Beat Stage
-            if (isLuffyDancingEnabled) {
-                LuffyDancingStageCard(
+            // Interactive HTML5, CSS3 & JavaScript Animated Vyshu AI Stage
+            if (isVyshuStageEnabled) {
+                VyshuStageCard(
                     isPlaying = isPlaying,
                     bpm = currentSong?.bpm ?: 120,
-                    danceMode = luffyDanceMode,
                     currentSongTitle = currentSong?.title,
-                    luffyMessage = luffyTapMessage,
-                    onDanceModeChange = { mode -> viewModel.setLuffyDanceMode(mode) },
-                    onLuffyClick = { viewModel.triggerLuffyTap() },
-                    onToggleMinimize = { isLuffyStageMinimized = !isLuffyStageMinimized },
-                    isMinimized = isLuffyStageMinimized,
+                    vyshuMessage = vyshuTapMessage,
+                    onVyshuClick = { viewModel.triggerVyshuTap() },
+                    onOpenChat = { viewModel.showVyshuSheet.value = true },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
@@ -558,11 +557,7 @@ fun VaaniMainScreen(
             onOfflineToggle = { currentSong?.let { viewModel.toggleOfflineDownload(it) } },
             onSleepTimerClick = { viewModel.showSleepTimerSheet.value = true },
             onFeedback = { feedback -> viewModel.provideRealtimeFeedback(feedback) },
-            onDismiss = { viewModel.showFullPlayerSheet.value = false },
-            isLuffyDancingEnabled = isLuffyDancingEnabled,
-            danceMode = luffyDanceMode,
-            onDanceModeChange = { mode -> viewModel.setLuffyDanceMode(mode) },
-            onLuffyClick = { viewModel.triggerLuffyTap() }
+            onDismiss = { viewModel.showFullPlayerSheet.value = false }
         )
     }
 
@@ -570,6 +565,17 @@ fun VaaniMainScreen(
         VoiceHistorySheet(
             logs = recentVoiceLogs,
             onDismiss = { showHistorySheet = false }
+        )
+    }
+
+    if (showVyshuSheet) {
+        VyshuAiSheet(
+            messages = vyshuMessages,
+            vyshuMood = vyshuMood,
+            onSendMessage = { query -> viewModel.askVyshuDirectly(query) },
+            onSetWebhookUrl = { url -> viewModel.vyshuBridge.customWebhookUrl = url },
+            currentWebhookUrl = viewModel.vyshuBridge.customWebhookUrl,
+            onDismiss = { viewModel.showVyshuSheet.value = false }
         )
     }
 }

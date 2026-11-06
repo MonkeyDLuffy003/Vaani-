@@ -51,8 +51,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import com.example.data.SongEntity
-import com.example.ui.DanceMode
 import com.example.ui.theme.AccentEmerald
 import com.example.ui.theme.AccentRose
 import com.example.ui.theme.BackgroundDark
@@ -85,14 +87,9 @@ fun FullPlayerSheet(
     onOfflineToggle: () -> Unit,
     onSleepTimerClick: () -> Unit,
     onFeedback: (String) -> Unit,
-    onDismiss: () -> Unit,
-    isLuffyDancingEnabled: Boolean = true,
-    danceMode: DanceMode = DanceMode.BEAT_BOUNCE,
-    onDanceModeChange: (DanceMode) -> Unit = {},
-    onLuffyClick: () -> Unit = {}
+    onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var showLuffyVisualizer by remember { mutableStateOf(isLuffyDancingEnabled) }
 
     val channelColor = when (song?.genre?.lowercase()) {
         "gym" -> Color(0xFFEF4444)
@@ -127,49 +124,45 @@ fun FullPlayerSheet(
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
-                                if (showLuffyVisualizer) Color(0xFFF7C325).copy(alpha = 0.25f) else channelColor.copy(alpha = 0.35f),
+                                Color(0xFF8B5CF6).copy(alpha = 0.35f),
+                                channelColor.copy(alpha = 0.25f),
                                 Color(0xFF0F121C)
                             )
                         )
                     )
                     .border(
                         2.dp,
-                        if (showLuffyVisualizer) Color(0xFFF7C325).copy(alpha = 0.6f) else channelColor.copy(alpha = 0.5f),
+                        channelColor.copy(alpha = 0.5f),
                         RoundedCornerShape(28.dp)
-                    )
-                    .clickable {
-                        if (showLuffyVisualizer) onLuffyClick() else showLuffyVisualizer = true
-                    },
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                if (showLuffyVisualizer) {
-                    // Full Dancing Luffy Character
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(110.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF8B5CF6).copy(alpha = 0.2f))
+                            .border(2.dp, Color(0xFFA78BFA).copy(alpha = 0.6f), CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
-                        LuffyDancingCharacter(
-                            isPlaying = isPlaying,
-                            bpm = song?.bpm ?: 120,
-                            danceMode = danceMode,
-                            size = 155.dp,
-                            showNotes = true,
-                            showStageGlow = true,
-                            onClick = onLuffyClick
+                        Image(
+                            painter = painterResource(id = R.drawable.vyshu_character),
+                            contentDescription = "Vyshu AI Music Art",
+                            modifier = Modifier
+                                .size(98.dp)
+                                .clip(CircleShape)
                         )
                     }
-                } else {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.GraphicEq,
-                            contentDescription = null,
-                            tint = channelColor,
-                            modifier = Modifier.size(54.dp)
-                        )
 
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
@@ -192,32 +185,6 @@ fun FullPlayerSheet(
                             color = TextSecondary
                         )
                     }
-                }
-            }
-
-            // Visualizer Switcher & Luffy Dance Mode Pills
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Switch between Channel Art and Dancing Luffy
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(SurfaceCard)
-                        .clickable { showLuffyVisualizer = !showLuffyVisualizer }
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                        .testTag("full_player_luffy_toggle")
-                ) {
-                    Text(
-                        text = if (showLuffyVisualizer) "👒 Luffy Groove (Tap to Speak)" else "⚡ Switch to Luffy Dancer",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        ),
-                        color = if (showLuffyVisualizer) Color(0xFFFDE047) else SecondaryCyan
-                    )
                 }
             }
 

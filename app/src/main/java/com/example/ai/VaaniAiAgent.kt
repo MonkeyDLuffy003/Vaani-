@@ -34,7 +34,7 @@ sealed class VoiceCommandResult {
     data class Unknown(val speechResponse: String) : VoiceCommandResult()
 
     enum class ActionType {
-        PLAY, PAUSE, NEXT, PREVIOUS, SHUFFLE, OFFLINE_MODE, TOGGLE_LUFFY_DANCE
+        PLAY, PAUSE, NEXT, PREVIOUS, SHUFFLE, OFFLINE_MODE
     }
 }
 
@@ -42,6 +42,7 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
 
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
+    private var pendingSpeech: String? = null
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -54,17 +55,36 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            val result = tts?.setLanguage(Locale.US)
-            if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+            val supported = trySetLanguage(Locale.getDefault()) ||
+                    trySetLanguage(Locale.US) ||
+                    trySetLanguage(Locale.ENGLISH)
+
+            if (supported) {
                 isTtsReady = true
                 tts?.setSpeechRate(0.95f)
                 tts?.setPitch(1.05f) // Smooth, friendly, modern AI tone
+
+                // Speak any pending utterance queued before init
+                pendingSpeech?.let { speech ->
+                    pendingSpeech = null
+                    speak(speech)
+                }
             }
+        }
+    }
+
+    private fun trySetLanguage(locale: Locale): Boolean {
+        return try {
+            val result = tts?.setLanguage(locale)
+            result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+        } catch (e: Exception) {
+            false
         }
     }
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
         if (!isTtsReady || tts == null) {
+            pendingSpeech = text
             onDone?.invoke()
             return
         }
@@ -131,13 +151,7 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
             )
         }
 
-        // Luffy Dancing Effect voice commands
-        if (lower.contains("luffy") || lower.contains("dance") || lower.contains("dancing") || lower.contains("gear 5")) {
-            return@withContext VoiceCommandResult.ControlAction(
-                VoiceCommandResult.ActionType.TOGGLE_LUFFY_DANCE,
-                "Shishishi! Luffy is hitting the dance floor with the rhythm!"
-            )
-        }
+
 
         // Sleep Timer voice commands
         if (lower.contains("sleep timer") || lower.contains("sleep in") || lower.contains("turn off after")) {
@@ -332,7 +346,7 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
         }
 
         val request = Request.Builder()
-            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey")
+            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
             .post(jsonRequest.toString().toRequestBody("application/json".toMediaType()))
             .build()
 

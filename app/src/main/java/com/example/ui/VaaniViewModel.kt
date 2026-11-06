@@ -7,6 +7,7 @@ import com.example.ai.VaaniAiAgent
 import com.example.ai.VocalMoodAnalysis
 import com.example.ai.VoiceCommandResult
 import com.example.ai.VoiceRecognitionManager
+import com.example.ai.VyshuAiBridge
 import com.example.audio.VaaniAudioPlayer
 import com.example.data.AppDatabase
 import com.example.data.SongEntity
@@ -27,6 +28,7 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
     val player = VaaniAudioPlayer(application)
     val aiAgent = VaaniAiAgent(application)
     val voiceRecognition = VoiceRecognitionManager(application)
+    val vyshuBridge = VyshuAiBridge(application)
 
     val allSongs: StateFlow<List<SongEntity>> = repository.allSongs.stateIn(
         scope = viewModelScope,
@@ -50,10 +52,12 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedChannel = MutableStateFlow("All")
     val selectedChannel: StateFlow<String> = _selectedChannel.asStateFlow()
 
-    // Luffy Dancing Stage state
-    val isLuffyDancingEnabled = MutableStateFlow(true)
-    val luffyDanceMode = MutableStateFlow(DanceMode.BEAT_BOUNCE)
-    val luffyTapMessage = MutableStateFlow<String?>(null)
+    // Vyshu AI Companion Stage state
+    val vyshuTapMessage = MutableStateFlow<String?>(null)
+    val isVyshuStageEnabled = MutableStateFlow(true)
+
+    // Vyshu AI Synergy Sheet
+    val showVyshuSheet = MutableStateFlow(false)
 
     // Offline only filter toggle
     private val _isOfflineOnlyFilter = MutableStateFlow(false)
@@ -226,6 +230,16 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
         _isProcessingVoice.value = true
 
         viewModelScope.launch {
+            // Check if conversational query should be delegated to Vyshu AI Companion
+            if (vyshuBridge.shouldDelegateToVyshu(input)) {
+                val vyshuReply = vyshuBridge.askVyshuAi(input)
+                _isProcessingVoice.value = false
+                aiAgent.speak(vyshuReply)
+                _vaaniMessage.value = "Vyshu AI: $vyshuReply"
+                repository.logVoiceAction(input, "Vyshu Companion", vyshuReply, "VYSHU_DELEGATE")
+                return@launch
+            }
+
             val result = aiAgent.processVoiceUtterance(input)
             _isProcessingVoice.value = false
 
@@ -242,10 +256,6 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
                         VoiceCommandResult.ActionType.OFFLINE_MODE -> {
                             _isOfflineOnlyFilter.value = true
                             _selectedChannel.value = "Storage"
-                        }
-                        VoiceCommandResult.ActionType.TOGGLE_LUFFY_DANCE -> {
-                            isLuffyDancingEnabled.value = true
-                            triggerLuffyTap()
                         }
                     }
                     repository.logVoiceAction(input, "Command", result.speechResponse, result.action.name)
@@ -311,32 +321,36 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
         voiceRecognition.stopListening()
     }
 
+    fun askVyshuDirectly(query: String) {
+        viewModelScope.launch {
+            val reply = vyshuBridge.askVyshuAi(query)
+            aiAgent.speak(reply)
+            _vaaniMessage.value = "Vyshu: $reply"
+            repository.logVoiceAction(query, "Vyshu AI", reply, "VYSHU_DIRECT")
+        }
+    }
+
     fun addStorageTrack(title: String, artist: String, uriString: String, genre: String = "Storage") {
         viewModelScope.launch {
             repository.addCustomTrack(title, artist, uriString, genre)
         }
     }
 
-    fun toggleLuffyDancing() {
-        isLuffyDancingEnabled.value = !isLuffyDancingEnabled.value
+    fun toggleVyshuStage() {
+        isVyshuStageEnabled.value = !isVyshuStageEnabled.value
     }
 
-    fun setLuffyDanceMode(mode: DanceMode) {
-        luffyDanceMode.value = mode
-    }
-
-    fun triggerLuffyTap() {
+    fun triggerVyshuTap() {
         val quotes = listOf(
-            "Shishishi! This music rocks!",
-            "I'm gonna be King of the Pirates!",
-            "Vaani, play that next groove!",
-            "Gear 5 dance party mode!",
-            "Music is life! Let's party!",
-            "Straw Hat groove in full effect!"
+            "Hey! Loving the rhythm with you!",
+            "Vaani and I have your soundtrack ready. How are you feeling today?",
+            "Your music taste is amazing! Let's keep this vibe going.",
+            "I'm right here with you! Tap the chat button if you ever want to talk.",
+            "Music sounds so much sweeter when we listen together!"
         )
-        val selectedQuote = quotes.random()
-        luffyTapMessage.value = selectedQuote
-        aiAgent.speak(selectedQuote)
+        val selected = quotes.random()
+        vyshuTapMessage.value = selected
+        aiAgent.speak(selected)
     }
 
     override fun onCleared() {
@@ -345,11 +359,5 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
         aiAgent.release()
         voiceRecognition.stopListening()
     }
-}
-
-enum class DanceMode(val label: String, val description: String) {
-    BEAT_BOUNCE("Beat Bounce", "Bounces and groves to the track BPM"),
-    GEAR_5("Gear 5 Hype", "Elastic cartoon bounces, joy wobble & high energy"),
-    STRAW_HAT_CHILL("Straw Hat Chill", "Smooth head-bob & mellow pirate sway")
 }
 

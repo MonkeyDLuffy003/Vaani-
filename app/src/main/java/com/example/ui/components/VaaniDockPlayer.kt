@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -20,6 +22,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Mic
@@ -68,9 +72,7 @@ fun VaaniDockPlayer(
     onMicClick: () -> Unit,
     onSleepTimerClick: () -> Unit,
     onCardClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    isLuffyDancingEnabled: Boolean = true,
-    danceMode: com.example.ui.DanceMode = com.example.ui.DanceMode.BEAT_BOUNCE
+    modifier: Modifier = Modifier
 ) {
     val progress = if (durationMs > 0) (currentPositionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 
@@ -119,19 +121,24 @@ fun VaaniDockPlayer(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Left: Dancing Luffy Mini Avatar
-                    if (isLuffyDancingEnabled) {
-                        LuffyDancingCharacter(
-                            isPlaying = isPlaying,
-                            bpm = currentSong?.bpm ?: 120,
-                            danceMode = danceMode,
-                            size = 38.dp,
-                            showNotes = false,
-                            showStageGlow = false,
-                            onClick = onCardClick,
-                            modifier = Modifier.padding(end = 10.dp)
+                    // Left: Compact Vyshu character artwork thumbnail
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF8B5CF6).copy(alpha = 0.25f))
+                            .border(1.dp, Color(0xFFA78BFA).copy(alpha = 0.5f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.vyshu_character),
+                            contentDescription = "Vyshu AI",
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
                         )
                     }
+                    Spacer(modifier = Modifier.size(10.dp))
 
                     // Left: Song metadata
                     Column(
