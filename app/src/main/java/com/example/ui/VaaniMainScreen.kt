@@ -252,9 +252,7 @@ fun VaaniMainScreen(
             onSetSleepTimer = { min -> viewModel.setSleepTimer(min) },
             onCancelSleepTimer = { viewModel.cancelSleepTimer() },
             onTestVoiceClick = {
-                viewModel.aiAgent.speak("Hello Teja, all voice recognition and speech audio systems are operating nominally.") {
-                    viewModel.checkAndRestartContinuousVoice()
-                }
+                viewModel.speakWithoutMicEcho("Hello Teja, all voice recognition and speech audio systems are operating nominally.")
             },
             onDismiss = { viewModel.showHamburgerMenu.value = false }
         )

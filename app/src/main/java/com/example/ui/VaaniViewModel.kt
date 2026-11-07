@@ -195,15 +195,15 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSleepTimer(minutes: Int) {
         player.setSleepTimer(minutes)
-        aiAgent.speak("Sleep timer set for $minutes minutes. Rest well.")
         _vaaniMessage.value = "Sleep timer active ($minutes min)"
         showSleepTimerSheet.value = false
+        speakWithoutMicEcho("Sleep timer set for $minutes minutes.")
     }
 
     fun cancelSleepTimer() {
         player.cancelSleepTimer()
-        aiAgent.speak("Sleep timer cancelled.")
         _vaaniMessage.value = "Sleep timer cancelled"
+        speakWithoutMicEcho("Sleep timer cancelled.")
     }
 
     /**
@@ -216,35 +216,44 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch {
                     repository.toggleFavorite(current.id, false)
                 }
-                aiAgent.speak("Got it! Saved to your favorites.")
-                _vaaniMessage.value = "Feedback: Loved '${current.title}'"
+                _vaaniMessage.value = "Saved to favorites: '${current.title}'"
             }
             "MORE_ENERGY" -> {
                 player.boostEnergy(true)
-                aiAgent.speak("Boosting tempo and energy.")
-                _vaaniMessage.value = "Feedback: Elevated energy (+10 BPM)"
+                _vaaniMessage.value = "Elevated tempo (+10 BPM)"
             }
             "RELAX_TEMPO" -> {
                 player.boostEnergy(false)
-                aiAgent.speak("Relaxing tempo for you.")
-                _vaaniMessage.value = "Feedback: Slowed tempo for calm vibe"
+                _vaaniMessage.value = "Relaxed tempo (-10 BPM)"
             }
             "NEXT_DIFFERENT" -> {
-                aiAgent.speak("Switching vibe.")
                 skipNext()
+                _vaaniMessage.value = "Switching vibe"
             }
         }
     }
 
     /**
-     * Scans phone storage for songs and auto-loads them
+     * Speaks via TTS while temporarily disabling speech recognition to prevent
+     * Vaani from recognizing or reacting to her own spoken audio from the device speakers.
+     */
+    fun speakWithoutMicEcho(text: String, onDone: (() -> Unit)? = null) {
+        voiceRecognition.stopListening()
+        aiAgent.speak(text) {
+            onDone?.invoke()
+            checkAndRestartContinuousVoice()
+        }
+    }
+
+    /**
+     * Scans phone storage for songs and auto-loads them without unsolicited speech
      */
     fun scanDeviceStorage() {
         viewModelScope.launch {
             val count = repository.scanDeviceStorageSongs()
             val msg = if (count > 0) "Found and loaded $count songs from phone storage!" else "Phone storage scanned (all songs up to date)"
             storageScanNotification.value = msg
-            aiAgent.speak("Found $count new songs from phone storage.")
+            _vaaniMessage.value = msg
         }
     }
 
@@ -260,9 +269,9 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
             if (vyshuBridge.shouldDelegateToVyshu(input)) {
                 val vyshuReply = vyshuBridge.askVyshuAi(input)
                 _isProcessingVoice.value = false
-                aiAgent.speak(vyshuReply)
                 _vaaniMessage.value = "Vyshu AI: $vyshuReply"
                 repository.logVoiceAction(input, "Vyshu Companion", vyshuReply, "VYSHU_DELEGATE")
+                speakWithoutMicEcho(vyshuReply)
                 return@launch
             }
 
@@ -275,19 +284,16 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
                     if (available.isNotEmpty()) {
                         val track = available.random()
                         player.playSong(track)
-                        val resp = "Playing '${track.title}' by ${track.artist}."
-                        aiAgent.speak(resp) {
-                            checkAndRestartContinuousVoice()
-                        }
-                        _vaaniMessage.value = resp
-                        repository.logVoiceAction(input, "PlayRandom", resp, "PLAY_TRACK_${track.id}")
+                        val displayMsg = "Playing '${track.title}' by ${track.artist}."
+                        _vaaniMessage.value = displayMsg
+                        repository.logVoiceAction(input, "PlayRandom", displayMsg, "PLAY_TRACK_${track.id}")
+                        // SILENT EXECUTION: Do NOT speak song title or metadata over the track!
+                        checkAndRestartContinuousVoice()
                     } else {
                         val noSongsResp = "No songs found in your library. Please open the menu with the three lines to scan or add songs from your phone storage."
-                        aiAgent.speak(noSongsResp) {
-                            checkAndRestartContinuousVoice()
-                        }
                         _vaaniMessage.value = noSongsResp
                         repository.logVoiceAction(input, "PlayRandom", noSongsResp, "NO_SONGS")
+                        speakWithoutMicEcho(noSongsResp)
                     }
                 }
 
@@ -300,73 +306,130 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     if (match != null) {
                         player.playSong(match)
-                        val resp = "Playing '${match.title}' by ${match.artist}."
-                        aiAgent.speak(resp) {
-                            checkAndRestartContinuousVoice()
-                        }
-                        _vaaniMessage.value = resp
-                        repository.logVoiceAction(input, "PlaySpecific: $q", resp, "PLAY_LOCAL_MATCH")
+                        val displayMsg = "Playing '${match.title}' by ${match.artist}."
+                        _vaaniMessage.value = displayMsg
+                        repository.logVoiceAction(input, "PlaySpecific: $q", displayMsg, "PLAY_LOCAL_MATCH")
+                        // SILENT EXECUTION: Do NOT speak song title or metadata over the track!
+                        checkAndRestartContinuousVoice()
                     } else {
                         // Search free music APIs (iTunes + Jamendo)
                         val onlineMatches = repository.searchOnlineFreeMusic(result.query)
                         if (onlineMatches.isNotEmpty()) {
                             val onlineTrack = onlineMatches.first()
                             player.playSong(onlineTrack)
-                            val resp = "Streaming '${onlineTrack.title}' by ${onlineTrack.artist} from free music API."
-                            aiAgent.speak(resp) {
-                                checkAndRestartContinuousVoice()
-                            }
-                            _vaaniMessage.value = resp
-                            repository.logVoiceAction(input, "PlayOnline: $q", resp, "PLAY_ONLINE_MATCH")
+                            val displayMsg = "Streaming '${onlineTrack.title}' by ${onlineTrack.artist}."
+                            _vaaniMessage.value = displayMsg
+                            repository.logVoiceAction(input, "PlayOnline: $q", displayMsg, "PLAY_ONLINE_MATCH")
+                            // SILENT EXECUTION: Do NOT speak song title or metadata over the track!
+                            checkAndRestartContinuousVoice()
                         } else {
-                            val notFoundResp = "I couldn't find '$q' in your library or free music streams. Would you like to scan phone storage?"
-                            aiAgent.speak(notFoundResp) {
-                                checkAndRestartContinuousVoice()
-                            }
+                            val cleanQuery = com.example.ai.cleanMetadataForSpeech(result.query)
+                            val notFoundResp = "I couldn't find '$cleanQuery' in your library or free music streams."
                             _vaaniMessage.value = notFoundResp
                             repository.logVoiceAction(input, "PlaySpecific: $q", notFoundResp, "NOT_FOUND")
+                            speakWithoutMicEcho(notFoundResp)
                         }
                     }
-                }
-
-                is VoiceCommandResult.ConversationalReply -> {
-                    aiAgent.speak(result.speechResponse) {
-                        checkAndRestartContinuousVoice()
-                    }
-                    _vaaniMessage.value = result.speechResponse
-                    repository.logVoiceAction(input, "Gemini Conversation", result.speechResponse, "GEMINI_TALK")
                 }
 
                 is VoiceCommandResult.ControlAction -> {
-                    aiAgent.speak(result.speechResponse) {
-                        checkAndRestartContinuousVoice()
-                    }
-                    _vaaniMessage.value = result.speechResponse
                     when (result.action) {
-                        VoiceCommandResult.ActionType.PLAY -> player.resume()
-                        VoiceCommandResult.ActionType.PAUSE -> player.pause()
-                        VoiceCommandResult.ActionType.NEXT -> skipNext()
-                        VoiceCommandResult.ActionType.PREVIOUS -> skipPrevious()
-                        VoiceCommandResult.ActionType.SHUFFLE -> player.toggleShuffle()
+                        VoiceCommandResult.ActionType.PLAY -> {
+                            player.resume()
+                            _vaaniMessage.value = "Resuming playback"
+                        }
+                        VoiceCommandResult.ActionType.PAUSE -> {
+                            player.pause()
+                            _vaaniMessage.value = "Paused"
+                        }
+                        VoiceCommandResult.ActionType.NEXT -> {
+                            skipNext()
+                            _vaaniMessage.value = "Skipped to next track"
+                        }
+                        VoiceCommandResult.ActionType.PREVIOUS -> {
+                            skipPrevious()
+                            _vaaniMessage.value = "Playing previous track"
+                        }
+                        VoiceCommandResult.ActionType.SHUFFLE -> {
+                            player.toggleShuffle()
+                            _vaaniMessage.value = if (player.isShuffle.value) "Shuffle on" else "Shuffle off"
+                        }
                         VoiceCommandResult.ActionType.OFFLINE_MODE -> {
                             _isOfflineOnlyFilter.value = true
                             _selectedChannel.value = "Storage"
+                            _vaaniMessage.value = "Storage mode"
                         }
                     }
-                    repository.logVoiceAction(input, "Command", result.speechResponse, result.action.name)
+                    repository.logVoiceAction(input, "Command", _vaaniMessage.value, result.action.name)
+                    // SILENT EXECUTION: Do NOT speak control confirmations over the music!
+                    checkAndRestartContinuousVoice()
                 }
 
                 is VoiceCommandResult.PlayChannel -> {
                     _selectedChannel.value = result.channel
                     val channelSongs = allSongs.value.filter { it.genre.equals(result.channel, ignoreCase = true) }
                     if (channelSongs.isNotEmpty()) {
-                        player.playSong(channelSongs.first())
+                        val track = channelSongs.first()
+                        player.playSong(track)
+                        _vaaniMessage.value = "${result.channel} Channel: '${track.title}'"
+                    } else {
+                        _vaaniMessage.value = "${result.channel} Channel"
                     }
-                    aiAgent.speak(result.speechResponse) {
-                        checkAndRestartContinuousVoice()
+                    repository.logVoiceAction(input, "Channel: ${result.channel}", _vaaniMessage.value, "PLAY_CHANNEL")
+                    // SILENT EXECUTION: Do NOT speak channel announcements over the music!
+                    checkAndRestartContinuousVoice()
+                }
+
+                is VoiceCommandResult.WhatIsPlaying -> {
+                    val current = player.currentSong.value
+                    val isPlaying = player.isPlaying.value
+                    if (current != null) {
+                        val cleanTitle = com.example.ai.cleanMetadataForSpeech(current.title)
+                        val cleanArtist = com.example.ai.cleanMetadataForSpeech(current.artist)
+                        val hasRealArtist = cleanArtist.isNotBlank() &&
+                            !cleanArtist.equals("unknown", ignoreCase = true) &&
+                            !cleanArtist.equals("phone storage", ignoreCase = true) &&
+                            !cleanArtist.equals("storage", ignoreCase = true)
+
+                        val spoken = if (isPlaying) {
+                            if (hasRealArtist) {
+                                "Now playing $cleanTitle by $cleanArtist."
+                            } else {
+                                "Now playing $cleanTitle."
+                            }
+                        } else {
+                            "Currently paused on $cleanTitle."
+                        }
+                        _vaaniMessage.value = "Playing: ${current.title} • ${current.artist}"
+                        repository.logVoiceAction(input, "WhatIsPlaying", spoken, "CURRENT_TRACK_ANNOUNCE")
+                        speakWithoutMicEcho(spoken)
+                    } else {
+                        val noTrackMsg = "No music is currently playing, Teja."
+                        _vaaniMessage.value = noTrackMsg
+                        repository.logVoiceAction(input, "WhatIsPlaying", noTrackMsg, "NO_ACTIVE_TRACK")
+                        speakWithoutMicEcho(noTrackMsg)
                     }
+                }
+
+                is VoiceCommandResult.WhyNotPlaying -> {
+                    val current = player.currentSong.value
+                    val isPlaying = player.isPlaying.value
+                    val totalSongs = allSongs.value.size
+                    val explanation = when {
+                        totalSongs == 0 -> "No songs are loaded in your library. Open the menu with the three lines to scan or import songs from your phone storage."
+                        current == null -> "No song is currently selected. Say 'Play music' to start playing."
+                        !isPlaying -> "Music is currently paused on ${com.example.ai.cleanMetadataForSpeech(current.title)}. Say 'Resume' to continue."
+                        else -> "Music is currently playing ${com.example.ai.cleanMetadataForSpeech(current.title)}. Check your device volume if you cannot hear it."
+                    }
+                    _vaaniMessage.value = explanation
+                    repository.logVoiceAction(input, "WhyNotPlaying", explanation, "DIAGNOSTIC_EXPLANATION")
+                    speakWithoutMicEcho(explanation)
+                }
+
+                is VoiceCommandResult.ConversationalReply -> {
                     _vaaniMessage.value = result.speechResponse
-                    repository.logVoiceAction(input, "Channel: ${result.channel}", result.speechResponse, "PLAY_CHANNEL")
+                    repository.logVoiceAction(input, "Gemini Conversation", result.speechResponse, "GEMINI_TALK")
+                    speakWithoutMicEcho(result.speechResponse)
                 }
 
                 is VoiceCommandResult.SetSleepTimer -> {
@@ -376,40 +439,39 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
 
                 is VoiceCommandResult.RealtimeFeedback -> {
                     when (result.feedbackType) {
-                        "FASTER" -> player.boostEnergy(true)
-                        "SLOWER" -> player.boostEnergy(false)
+                        "FASTER" -> {
+                            player.boostEnergy(true)
+                            _vaaniMessage.value = "Tempo increased (+10 BPM)"
+                        }
+                        "SLOWER" -> {
+                            player.boostEnergy(false)
+                            _vaaniMessage.value = "Tempo relaxed (-10 BPM)"
+                        }
                     }
-                    aiAgent.speak(result.speechResponse) {
-                        checkAndRestartContinuousVoice()
-                    }
-                    _vaaniMessage.value = result.speechResponse
-                    repository.logVoiceAction(input, "Feedback: ${result.feedbackType}", result.speechResponse, "TEMPO_ADJUST")
+                    repository.logVoiceAction(input, "Feedback: ${result.feedbackType}", _vaaniMessage.value, "TEMPO_ADJUST")
+                    // SILENT EXECUTION: Adjust BPM without speaking over the music!
+                    checkAndRestartContinuousVoice()
                 }
 
                 is VoiceCommandResult.MoodAnalyzed -> {
                     _activeMoodAnalysis.value = result.analysis
                     _selectedChannel.value = result.analysis.suggestedChannel
 
-                    // Play best matching track for the mood
                     val matchingSongs = allSongs.value.filter {
                         it.genre.equals(result.analysis.suggestedChannel, ignoreCase = true)
                     }
                     if (matchingSongs.isNotEmpty()) {
                         player.playSong(matchingSongs.first())
                     }
-
-                    aiAgent.speak(result.analysis.vaaniResponse) {
-                        checkAndRestartContinuousVoice()
-                    }
-                    _vaaniMessage.value = "Mood: ${result.analysis.mood} • ${result.analysis.vaaniResponse}"
-                    repository.logVoiceAction(input, result.analysis.mood, result.analysis.vaaniResponse, "MOOD_CURATION")
+                    _vaaniMessage.value = "Mood: ${result.analysis.mood}"
+                    repository.logVoiceAction(input, result.analysis.mood, result.analysis.mood, "MOOD_CURATION")
+                    // SILENT EXECUTION: Do NOT speak over the music!
+                    checkAndRestartContinuousVoice()
                 }
 
                 is VoiceCommandResult.Unknown -> {
-                    aiAgent.speak(result.speechResponse) {
-                        checkAndRestartContinuousVoice()
-                    }
                     _vaaniMessage.value = result.speechResponse
+                    speakWithoutMicEcho(result.speechResponse)
                 }
             }
         }
@@ -465,11 +527,9 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
     fun askVyshuDirectly(query: String) {
         viewModelScope.launch {
             val reply = vyshuBridge.askVyshuAi(query)
-            aiAgent.speak(reply) {
-                checkAndRestartContinuousVoice()
-            }
             _vaaniMessage.value = "Vyshu: $reply"
             repository.logVoiceAction(query, "Vyshu AI", reply, "VYSHU_DIRECT")
+            speakWithoutMicEcho(reply)
         }
     }
 
@@ -501,9 +561,7 @@ class VaaniViewModel(application: Application) : AndroidViewModel(application) {
         )
         val selected = quotes.random()
         vyshuTapMessage.value = selected
-        aiAgent.speak(selected) {
-            checkAndRestartContinuousVoice()
-        }
+        speakWithoutMicEcho(selected)
     }
 
     override fun onCleared() {

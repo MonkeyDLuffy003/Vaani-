@@ -28,15 +28,40 @@ data class VocalMoodAnalysis(
     val vocalCharacteristics: String,
     val vaaniResponse: String
 )
+ 
+/**
+ * Clean audio metadata, filenames, and underscores into natural spoken text.
+ * Prevents reading raw underscores, file extensions, and track numbers aloud.
+ */
+fun cleanMetadataForSpeech(raw: String?): String {
+    if (raw.isNullOrBlank()) return ""
+    var cleaned = raw.trim()
+    // Remove common audio file extensions (.mp3, .wav, etc.)
+    cleaned = cleaned.replace(Regex("\\.(mp3|m4a|wav|aac|flac|ogg|opus)$", RegexOption.IGNORE_CASE), "")
+    // Replace underscores, hyphens, and dots with spaces
+    cleaned = cleaned.replace("_", " ")
+        .replace("-", " ")
+        .replace(".", " ")
+    // Remove leading track numbers e.g. "01 ", "01 - " or "1. "
+    cleaned = cleaned.replace(Regex("^\\d{1,3}\\s*[-.]?\\s*"), "")
+    // Collapse multiple spaces
+    cleaned = cleaned.replace(Regex("\\s+"), " ").trim()
+    return cleaned
+}
 
 sealed class VoiceCommandResult {
-    data class PlayChannel(val channel: String, val speechResponse: String) : VoiceCommandResult()
-    data class PlayRandom(val speechResponse: String) : VoiceCommandResult()
-    data class PlaySpecific(val query: String, val speechResponse: String) : VoiceCommandResult()
-    data class ControlAction(val action: ActionType, val speechResponse: String) : VoiceCommandResult()
+    // Music Playback Commands (Silent Execution — No TTS during playback)
+    data class PlayChannel(val channel: String) : VoiceCommandResult()
+    data class PlayRandom(val query: String = "") : VoiceCommandResult()
+    data class PlaySpecific(val query: String) : VoiceCommandResult()
+    data class ControlAction(val action: ActionType) : VoiceCommandResult()
+    data class RealtimeFeedback(val feedbackType: String) : VoiceCommandResult()
+
+    // Conversational Commands (Spoken Responses)
+    data class WhatIsPlaying(val query: String = "") : VoiceCommandResult()
+    data class WhyNotPlaying(val query: String = "") : VoiceCommandResult()
     data class SetSleepTimer(val minutes: Int, val speechResponse: String) : VoiceCommandResult()
     data class MoodAnalyzed(val analysis: VocalMoodAnalysis) : VoiceCommandResult()
-    data class RealtimeFeedback(val feedbackType: String, val speechResponse: String) : VoiceCommandResult()
     data class ConversationalReply(val speechResponse: String) : VoiceCommandResult()
     data class Unknown(val speechResponse: String) : VoiceCommandResult()
 
@@ -129,64 +154,98 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
 
     /**
      * Analyzes vocal utterance and determines intent + mood.
-     * Integrates Gemini 3.5 Flash when online with full offline fallback.
+     * Separates silent music commands from conversational spoken queries.
      */
     suspend fun processVoiceUtterance(spokenText: String): VoiceCommandResult = withContext(Dispatchers.IO) {
-        val lower = spokenText.lowercase().trim()
+        val rawLower = spokenText.lowercase().trim()
 
-        // 1. Direct command matching for instant latency-free execution
-        if (lower.contains("pause") || lower.contains("stop music") || lower.contains("freeze")) {
-            return@withContext VoiceCommandResult.ControlAction(
-                VoiceCommandResult.ActionType.PAUSE,
-                "Pausing your music."
-            )
+        // Strip wake words "vaani", "hey vaani" and punctuation for accurate intent routing
+        val lower = rawLower
+            .replace(Regex("^(hey\\s+vaani|vaani)[,\\s]*"), "")
+            .replace(Regex("[,.!?]+$"), "")
+            .trim()
+
+        // 1. Explicit query: "What song is playing?" (Announce current song aloud)
+        if (lower.contains("what song is playing") || lower.contains("what's playing") ||
+            lower.contains("what is playing") || lower.contains("which song is this") ||
+            lower.contains("what song is this") || lower.contains("what track is this") ||
+            lower.contains("current song") || lower.contains("current track") ||
+            lower.contains("name of this song") || lower.contains("who is singing") ||
+            lower.contains("who sings this") || lower.contains("who is this artist") ||
+            lower == "what is this" || lower == "what is this song" || lower == "song name" ||
+            lower == "track name" || lower == "song info" || lower == "track info"
+        ) {
+            return@withContext VoiceCommandResult.WhatIsPlaying(spokenText)
         }
 
-        // Direct "Vaani, play music" or "play music"
-        if (lower == "play music" || lower == "vaani play music" || lower == "play songs" || lower == "play some music" || lower == "start music" || lower == "play") {
-            return@withContext VoiceCommandResult.PlayRandom("Playing music from your library.")
+        // 2. Explicit query: "Why isn't music playing?" (Diagnose and explain actual problem aloud)
+        if (lower.contains("why isn't music playing") || lower.contains("why is music not playing") ||
+            lower.contains("why is it not playing") || lower.contains("why no music") ||
+            lower.contains("why isn't it playing") || lower.contains("why music stopped") ||
+            lower.contains("why did music stop")
+        ) {
+            return@withContext VoiceCommandResult.WhyNotPlaying(spokenText)
         }
 
-        if (lower.startsWith("play ") || lower.contains("play track ") || lower.contains("play song ")) {
-            val query = lower.substringAfter("play ").replace("song", "").replace("track", "").trim()
-            if (query.isEmpty() || query == "music" || query == "something") {
-                return@withContext VoiceCommandResult.PlayRandom("Playing music from your library.")
+        // 3. Playback Transport Controls (SILENT EXECUTION — No TTS narration)
+        if (lower == "pause" || lower == "pause music" || lower == "stop music" || lower == "stop" || lower == "freeze") {
+            return@withContext VoiceCommandResult.ControlAction(VoiceCommandResult.ActionType.PAUSE)
+        }
+
+        if (lower == "resume" || lower == "unpause" || lower == "continue" || lower == "continue music" || lower == "keep playing") {
+            return@withContext VoiceCommandResult.ControlAction(VoiceCommandResult.ActionType.PLAY)
+        }
+
+        if (lower == "next" || lower == "next song" || lower == "next track" || lower == "skip" || lower == "skip song" || lower == "change song") {
+            return@withContext VoiceCommandResult.ControlAction(VoiceCommandResult.ActionType.NEXT)
+        }
+
+        if (lower == "previous" || lower == "previous song" || lower == "prev" || lower == "go back" || lower == "last song" || lower == "back") {
+            return@withContext VoiceCommandResult.ControlAction(VoiceCommandResult.ActionType.PREVIOUS)
+        }
+
+        if (lower == "shuffle" || lower == "shuffle music" || lower == "randomize") {
+            return@withContext VoiceCommandResult.ControlAction(VoiceCommandResult.ActionType.SHUFFLE)
+        }
+
+        // 4. Music Playback: "Play music", "Play songs", "Play [song]" (SILENT EXECUTION — No TTS over song)
+        if (lower == "play music" || lower == "play songs" || lower == "play some music" ||
+            lower == "start music" || lower == "play" || lower == "music" || lower == "drop beats" ||
+            lower == "start playback" || lower == "play track" || lower == "play song"
+        ) {
+            return@withContext VoiceCommandResult.PlayRandom()
+        }
+
+        if (lower.startsWith("play ") || lower.startsWith("play song ") || lower.startsWith("play track ")) {
+            val query = lower.replace(Regex("^play\\s+(song|track)?\\s*"), "").trim()
+            if (query.isEmpty() || query == "music" || query == "something" || query == "songs") {
+                return@withContext VoiceCommandResult.PlayRandom()
             } else {
-                return@withContext VoiceCommandResult.PlaySpecific(query, "Looking for '$query' in your library.")
+                return@withContext VoiceCommandResult.PlaySpecific(query)
             }
         }
 
-        if (lower.contains("resume")) {
-            return@withContext VoiceCommandResult.ControlAction(
-                VoiceCommandResult.ActionType.PLAY,
-                "Resuming playback."
-            )
+        // 5. Channel Commands (SILENT EXECUTION)
+        if (lower.contains("gym") || lower.contains("workout") || lower.contains("exercise")) {
+            return@withContext VoiceCommandResult.PlayChannel("Gym")
+        }
+        if (lower.contains("cook") || lower.contains("cooking") || lower.contains("kitchen") || lower.contains("recipe") || lower.contains("dinner")) {
+            return@withContext VoiceCommandResult.PlayChannel("Cooking")
+        }
+        if (lower.contains("home") || lower.contains("house") || lower.contains("cozy") || lower.contains("living room")) {
+            return@withContext VoiceCommandResult.PlayChannel("Home")
+        }
+        if (lower.contains("relax") || lower.contains("calm") || lower.contains("chill") || lower.contains("meditat") || lower.contains("soothing") || lower.contains("peace")) {
+            return@withContext VoiceCommandResult.PlayChannel("Relax")
+        }
+        if (lower.contains("motivat") || lower.contains("inspire") || lower.contains("focus") || lower.contains("study") || lower.contains("energy")) {
+            return@withContext VoiceCommandResult.PlayChannel("Motivation")
+        }
+        if (lower.contains("offline") || lower.contains("storage") || lower.contains("phone storage") || lower.contains("downloaded") || lower.contains("my songs") || lower.contains("phone")) {
+            return@withContext VoiceCommandResult.PlayChannel("Storage")
         }
 
-        if (lower.contains("next") || lower.contains("skip") || lower.contains("change song") || lower.contains("next track")) {
-            return@withContext VoiceCommandResult.ControlAction(
-                VoiceCommandResult.ActionType.NEXT,
-                "Skipping to the next track."
-            )
-        }
-
-        if (lower.contains("previous") || lower.contains("prev") || lower.contains("go back") || lower.contains("last song")) {
-            return@withContext VoiceCommandResult.ControlAction(
-                VoiceCommandResult.ActionType.PREVIOUS,
-                "Playing previous track."
-            )
-        }
-
-        if (lower.contains("shuffle") || lower.contains("randomize")) {
-            return@withContext VoiceCommandResult.ControlAction(
-                VoiceCommandResult.ActionType.SHUFFLE,
-                "Shuffle mode toggled."
-            )
-        }
-
-
-
-        // Sleep Timer voice commands
+        // 6. Sleep Timer voice commands
         if (lower.contains("sleep timer") || lower.contains("sleep in") || lower.contains("turn off after")) {
             val minutes = when {
                 lower.contains("15") || lower.contains("fifteen") -> 15
@@ -199,83 +258,33 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
             }
             return@withContext VoiceCommandResult.SetSleepTimer(
                 minutes,
-                "Sleep timer set for $minutes minutes. Music will fade smoothly."
+                "Sleep timer set for $minutes minutes."
             )
         }
 
-        // Real-time user feedback voice commands
-        if (lower.contains("faster") || lower.contains("more energy") || lower.contains("speed up") || lower.contains("pump it up")) {
-            return@withContext VoiceCommandResult.RealtimeFeedback(
-                "FASTER",
-                "Increasing tempo and energy for you."
-            )
+        // 7. Real-time tempo/energy feedback (SILENT EXECUTION — No TTS interruption)
+        if (lower == "faster" || lower == "more energy" || lower == "speed up" || lower == "pump it up") {
+            return@withContext VoiceCommandResult.RealtimeFeedback("FASTER")
+        }
+        if (lower == "slower" || lower == "chill out" || lower == "too fast" || lower == "calm down") {
+            return@withContext VoiceCommandResult.RealtimeFeedback("SLOWER")
         }
 
-        if (lower.contains("slower") || lower.contains("chill out") || lower.contains("too fast") || lower.contains("calm down")) {
-            return@withContext VoiceCommandResult.RealtimeFeedback(
-                "SLOWER",
-                "Bringing down the tempo for a more relaxed groove."
-            )
-        }
-
-        // Offline storage voice command
-        if (lower.contains("offline") || lower.contains("storage") || lower.contains("downloaded") || lower.contains("my songs") || lower.contains("phone")) {
-            return@withContext VoiceCommandResult.PlayChannel(
-                "Storage",
-                "Accessing your phone storage and offline downloaded songs."
-            )
-        }
-
-        // Channel commands
-        if (lower.contains("gym") || lower.contains("workout") || lower.contains("lift") || lower.contains("exercise")) {
-            return@withContext VoiceCommandResult.PlayChannel(
-                "Gym",
-                "Starting Gym power channel. Let's get that workout in!"
-            )
-        }
-
-        if (lower.contains("cook") || lower.contains("cooking") || lower.contains("kitchen") || lower.contains("recipe") || lower.contains("dinner")) {
-            return@withContext VoiceCommandResult.PlayChannel(
-                "Cooking",
-                "Putting on the Cooking groove channel. Happy cooking!"
-            )
-        }
-
-        if (lower.contains("home") || lower.contains("house") || lower.contains("cozy") || lower.contains("living room")) {
-            return@withContext VoiceCommandResult.PlayChannel(
-                "Home",
-                "Tuning into the Home acoustic sanctuary."
-            )
-        }
-
-        if (lower.contains("relax") || lower.contains("calm") || lower.contains("chill") || lower.contains("meditat") || lower.contains("stressed") || lower.contains("tired") || lower.contains("peace")) {
-            return@withContext VoiceCommandResult.PlayChannel(
-                "Relax",
-                "Switching to Relax channel with soothing 432Hz ambient sound."
-            )
-        }
-
-        if (lower.contains("motivat") || lower.contains("inspire") || lower.contains("focus") || lower.contains("work") || lower.contains("study") || lower.contains("energy")) {
-            return@withContext VoiceCommandResult.PlayChannel(
-                "Motivation",
-                "Playing Motivation channel for laser focus and momentum."
-            )
-        }
-
-        // 2. If user is talking, asking questions, chatting, or asking about music, call Gemini API
-        val isConversational = lower.contains("who") || lower.contains("how") || lower.contains("what") ||
-                lower.contains("why") || lower.contains("tell me") || lower.contains("joke") ||
-                lower.contains("sing") || lower.contains("hi") || lower.contains("hello") ||
-                lower.contains("hey") || lower.contains("vaani") || lower.contains("teja") ||
-                lower.contains("talk") || lower.contains("chat") || lower.contains("recommend") ||
-                lower.contains("favorite") || lower.contains("love") || lower.contains("feel")
+        // 8. Conversational / AI Queries (SPOKEN RESPONSES via Gemini or Conversational Engine)
+        val isConversational = lower.contains("talk to me") || lower.contains("recommend") ||
+                lower.contains("suggest") || lower.contains("who") || lower.contains("how") ||
+                lower.contains("what") || lower.contains("why") || lower.contains("tell me") ||
+                lower.contains("joke") || lower.contains("sing") || lower.contains("hi") ||
+                lower.contains("hello") || lower.contains("hey") || lower.contains("teja") ||
+                lower.contains("chat") || lower.contains("favorite") || lower.contains("love") ||
+                lower.contains("feel") || lower.contains("thank")
 
         if (isConversational) {
             val reply = talkWithGemini(spokenText)
             return@withContext VoiceCommandResult.ConversationalReply(reply)
         }
 
-        // 3. Perform Vocal Mood Analysis using Gemini API (or intelligent fallback)
+        // 9. Vocal Mood Analysis fallback
         val moodAnalysis = analyzeVocalMood(spokenText)
         return@withContext VoiceCommandResult.MoodAnalyzed(moodAnalysis)
     }
