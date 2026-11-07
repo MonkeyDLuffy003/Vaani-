@@ -42,6 +42,8 @@ class SongRepository(
         )
     }
 
+    private val freeMusicApi = com.example.audio.FreeMusicApiService()
+
     suspend fun addCustomTrack(title: String, artist: String, uri: String, genre: String = "Storage") = withContext(Dispatchers.IO) {
         val song = SongEntity(
             title = title,
@@ -56,6 +58,28 @@ class SongRepository(
             waveformSeed = title.hashCode()
         )
         songDao.insertSong(song)
+    }
+
+    /**
+     * Searches Free Music APIs (iTunes + Jamendo) and saves matching tracks to local DB
+     */
+    suspend fun searchOnlineFreeMusic(query: String): List<SongEntity> = withContext(Dispatchers.IO) {
+        val tracks = freeMusicApi.searchAllFreeMusicApis(query)
+        if (tracks.isNotEmpty()) {
+            songDao.insertSongs(tracks)
+        }
+        tracks
+    }
+
+    /**
+     * Pre-fetches free streaming music from free APIs
+     */
+    suspend fun prefetchOnlineTrendingMusic(): Int = withContext(Dispatchers.IO) {
+        val trending = freeMusicApi.searchAllFreeMusicApis("trending hits")
+        if (trending.isNotEmpty()) {
+            songDao.insertSongs(trending)
+        }
+        trending.size
     }
 
     suspend fun initializeDefaultSongsIfEmpty() = withContext(Dispatchers.IO) {

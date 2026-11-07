@@ -17,6 +17,10 @@ import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 data class VocalMoodAnalysis(
     val mood: String, // Energetic, Calm, Stressed, Fatigued, Motivated, Cozy
     val confidence: Float,
@@ -27,10 +31,13 @@ data class VocalMoodAnalysis(
 
 sealed class VoiceCommandResult {
     data class PlayChannel(val channel: String, val speechResponse: String) : VoiceCommandResult()
+    data class PlayRandom(val speechResponse: String) : VoiceCommandResult()
+    data class PlaySpecific(val query: String, val speechResponse: String) : VoiceCommandResult()
     data class ControlAction(val action: ActionType, val speechResponse: String) : VoiceCommandResult()
     data class SetSleepTimer(val minutes: Int, val speechResponse: String) : VoiceCommandResult()
     data class MoodAnalyzed(val analysis: VocalMoodAnalysis) : VoiceCommandResult()
     data class RealtimeFeedback(val feedbackType: String, val speechResponse: String) : VoiceCommandResult()
+    data class ConversationalReply(val speechResponse: String) : VoiceCommandResult()
     data class Unknown(val speechResponse: String) : VoiceCommandResult()
 
     enum class ActionType {
@@ -43,6 +50,9 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
     private var pendingSpeech: String? = null
+
+    private val _isSpeaking = MutableStateFlow(false)
+    val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -85,27 +95,36 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
     fun speak(text: String, onDone: (() -> Unit)? = null) {
         if (!isTtsReady || tts == null) {
             pendingSpeech = text
+            _isSpeaking.value = false
             onDone?.invoke()
             return
         }
 
         val utteranceId = "vaani_${System.currentTimeMillis()}"
-        if (onDone != null) {
-            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(id: String?) {}
-                override fun onDone(id: String?) {
-                    if (id == utteranceId) onDone()
+        _isSpeaking.value = true
+        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(id: String?) {
+                if (id == utteranceId) _isSpeaking.value = true
+            }
+            override fun onDone(id: String?) {
+                if (id == utteranceId) {
+                    _isSpeaking.value = false
+                    onDone?.invoke()
                 }
-                override fun onError(id: String?) {
-                    if (id == utteranceId) onDone()
+            }
+            override fun onError(id: String?) {
+                if (id == utteranceId) {
+                    _isSpeaking.value = false
+                    onDone?.invoke()
                 }
-            })
-        }
+            }
+        })
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
     }
 
     fun stopSpeaking() {
         tts?.stop()
+        _isSpeaking.value = false
     }
 
     /**
@@ -123,7 +142,21 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
             )
         }
 
-        if (lower.contains("resume") || lower.startsWith("play music") || lower == "play") {
+        // Direct "Vaani, play music" or "play music"
+        if (lower == "play music" || lower == "vaani play music" || lower == "play songs" || lower == "play some music" || lower == "start music" || lower == "play") {
+            return@withContext VoiceCommandResult.PlayRandom("Playing music from your library.")
+        }
+
+        if (lower.startsWith("play ") || lower.contains("play track ") || lower.contains("play song ")) {
+            val query = lower.substringAfter("play ").replace("song", "").replace("track", "").trim()
+            if (query.isEmpty() || query == "music" || query == "something") {
+                return@withContext VoiceCommandResult.PlayRandom("Playing music from your library.")
+            } else {
+                return@withContext VoiceCommandResult.PlaySpecific(query, "Looking for '$query' in your library.")
+            }
+        }
+
+        if (lower.contains("resume")) {
             return@withContext VoiceCommandResult.ControlAction(
                 VoiceCommandResult.ActionType.PLAY,
                 "Resuming playback."
@@ -229,7 +262,20 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
             )
         }
 
-        // 2. Perform Vocal Mood Analysis using Gemini API (or intelligent fallback)
+        // 2. If user is talking, asking questions, chatting, or asking about music, call Gemini API
+        val isConversational = lower.contains("who") || lower.contains("how") || lower.contains("what") ||
+                lower.contains("why") || lower.contains("tell me") || lower.contains("joke") ||
+                lower.contains("sing") || lower.contains("hi") || lower.contains("hello") ||
+                lower.contains("hey") || lower.contains("vaani") || lower.contains("teja") ||
+                lower.contains("talk") || lower.contains("chat") || lower.contains("recommend") ||
+                lower.contains("favorite") || lower.contains("love") || lower.contains("feel")
+
+        if (isConversational) {
+            val reply = talkWithGemini(spokenText)
+            return@withContext VoiceCommandResult.ConversationalReply(reply)
+        }
+
+        // 3. Perform Vocal Mood Analysis using Gemini API (or intelligent fallback)
         val moodAnalysis = analyzeVocalMood(spokenText)
         return@withContext VoiceCommandResult.MoodAnalyzed(moodAnalysis)
     }
@@ -369,6 +415,77 @@ class VaaniAiAgent(private val context: Context) : TextToSpeech.OnInitListener {
             vocalCharacteristics = parsed.optString("vocalCharacteristics", "Natural pitch with calm resonance"),
             vaaniResponse = parsed.optString("vaaniResponse", "Curating music for your current vibe.")
         )
+    }
+
+    /**
+     * Talks with Gemini 2.5 Flash for authentic AI conversational voice interaction
+     */
+    suspend fun talkWithGemini(utterance: String): String = withContext(Dispatchers.IO) {
+        val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (e: Throwable) { "" }
+        if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
+            try {
+                val prompt = "You are Vaani, a charming, intelligent Indian AI music bot talking to Teja. Respond concisely in 1 to 2 spoken sentences with warmth, witty music references, or helpful answers. Teja says: \"$utterance\""
+                val jsonRequest = JSONObject().apply {
+                    put("contents", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("parts", JSONArray().apply {
+                                put(JSONObject().apply {
+                                    put("text", prompt)
+                                })
+                            })
+                        })
+                    })
+                    put("generationConfig", JSONObject().apply {
+                        put("temperature", 0.7)
+                        put("maxOutputTokens", 100)
+                    })
+                }
+
+                val request = Request.Builder()
+                    .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
+                    .post(jsonRequest.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                val response = okHttpClient.newCall(request).execute()
+                val bodyStr = response.body?.string()
+                if (!bodyStr.isNullOrBlank()) {
+                    val root = JSONObject(bodyStr)
+                    val text = root.getJSONArray("candidates")
+                        .getJSONObject(0)
+                        .getJSONObject("content")
+                        .getJSONArray("parts")
+                        .getJSONObject(0)
+                        .getString("text")
+                        .trim()
+                    if (text.isNotBlank()) return@withContext text
+                }
+            } catch (e: Exception) {
+                Log.w("VaaniAI", "Gemini talk error: ${e.message}")
+            }
+        }
+
+        // Offline conversational intelligence
+        getConversationalFallback(utterance)
+    }
+
+    private fun getConversationalFallback(text: String): String {
+        val lower = text.lowercase()
+        return when {
+            lower.contains("who are you") || lower.contains("your name") ->
+                "I am Vaani, your AI music assistant. I'm here to curate and play the perfect soundtrack for your day, Teja!"
+            lower.contains("how are you") || lower.contains("how's it going") ->
+                "I'm feeling energized and ready to drop some great beats for you, Teja! What are we listening to?"
+            lower.contains("hello") || lower.contains("hi") || lower.contains("hey") ->
+                "Hey Teja! Always wonderful to vibe with you. Just say what track you want or ask me anything!"
+            lower.contains("joke") ->
+                "Why was the musician arrested? Because they got caught in treble! But don't worry, my playlist is completely harmless."
+            lower.contains("recommend") || lower.contains("suggest") ->
+                "I recommend some smooth lo-fi beats or ambient acoustic rhythms right now to elevate your flow."
+            lower.contains("love") || lower.contains("favorite") ->
+                "I love music that gets into your soul and moves your spirit. Tell me a song and I'll spin it!"
+            else ->
+                "I hear you, Teja! Music connects everything. Ask me to play any song or explore your library."
+        }
     }
 
     fun release() {

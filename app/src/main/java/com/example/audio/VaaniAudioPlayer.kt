@@ -67,19 +67,39 @@ class VaaniAudioPlayer(private val context: Context) {
             synth.start(song.genre, song.bpm)
             _isPlaying.value = true
         } else {
-            // Play from device storage URI via MediaPlayer
+            // Play from device storage URI or network stream via MediaPlayer
+            val isNetworkStream = song.uri.startsWith("http://") || song.uri.startsWith("https://")
             try {
                 mediaPlayer = MediaPlayer().apply {
                     setDataSource(context, Uri.parse(song.uri))
-                    prepare()
-                    _durationMs.value = duration.toLong()
-                    start()
                     setOnCompletionListener {
                         _isPlaying.value = false
                         onTrackFinished?.invoke()
                     }
+                    setOnErrorListener { _, what, extra ->
+                        Log.e("VaaniPlayer", "MediaPlayer playback error: what=$what, extra=$extra. Falling back to synth.")
+                        synth.start(song.genre, song.bpm)
+                        _isPlaying.value = true
+                        true
+                    }
+                    if (isNetworkStream) {
+                        setOnPreparedListener { mp ->
+                            if (mp.duration > 0) {
+                                _durationMs.value = mp.duration.toLong()
+                            }
+                            mp.start()
+                            _isPlaying.value = true
+                        }
+                        prepareAsync()
+                    } else {
+                        prepare()
+                        if (duration > 0) {
+                            _durationMs.value = duration.toLong()
+                        }
+                        start()
+                        _isPlaying.value = true
+                    }
                 }
-                _isPlaying.value = true
             } catch (e: Exception) {
                 Log.e("VaaniPlayer", "Fallback to synth for error: ${e.message}")
                 // Graceful fallback to offline synth if file is missing/unreadable
@@ -196,6 +216,14 @@ class VaaniAudioPlayer(private val context: Context) {
         } catch (e: Exception) {
             // ignore
         }
+    }
+
+    fun clearSession() {
+        cancelSleepTimer()
+        stopCurrent()
+        _currentSong.value = null
+        _isPlaying.value = false
+        _currentPositionMs.value = 0L
     }
 
     private fun stopCurrent() {

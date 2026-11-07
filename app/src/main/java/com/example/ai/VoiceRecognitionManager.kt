@@ -31,6 +31,7 @@ class VoiceRecognitionManager(private val context: Context) {
 
     var onSpeechComplete: ((String) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
+    var onTimeoutOrNoMatch: (() -> Unit)? = null
 
     fun startListening() {
         mainHandler.post {
@@ -72,7 +73,11 @@ class VoiceRecognitionManager(private val context: Context) {
                             SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
                             else -> "Recognition code: $error"
                         }
-                        onError?.invoke(msg)
+                        if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                            onTimeoutOrNoMatch?.invoke()
+                        } else {
+                            onError?.invoke(msg)
+                        }
                     }
 
                     override fun onResults(results: Bundle?) {
